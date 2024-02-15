@@ -1,0 +1,272 @@
+import numpy as np
+import math
+import matplotlib.pyplot as plt
+from FT.torque_factors import *
+
+
+
+class Forcetool:
+    """
+        Initializes a new instance of the Forcetool class.
+
+        Parameters:
+        - m (float): The mass in kilograms.
+        - c (float, optional): Horizontal distance from the LAT holder bottom to the pivot axis (mm). Defaults to 113.
+        - h (float, optional): Vertical distance from the LAT holder top to the pivot axis (mm). Defaults to 482.
+        - v (float, optional): Vertical distance from the LAT attachment bottom (pivot axis) to the ground (mm). Defaults to 1563.
+        
+        Attributes:
+        - total_weight (float): Total weight of the system in kilograms. Set to 3701.66 kg.
+        - cg_deviation (float): Center of gravity deviation in millimeters. Set to 117.87 mm.
+        - g (float): Acceleration due to gravity in m/s^2. Set to 9.81 m/s^2.
+        - l (float): Horizontal distance from the weight application point to the pivot axis (mm). Set to 1175 mm.
+        - y (float): Vertical distance from the weight application point to the pivot axis (mm). Set to 117.87 mm.
+
+        Notes:
+        - The orientation of the system considers -60 degrees as WEST (retracted) and 60 degrees as EAST (fully extended), which is the reverse of the convention used in the Forcetool Excel sheet.
+    """
+
+    def __init__(self,m,c=113 ,h=482,v=1563) -> None:
+        self.c = c                                  
+        self.h = h                                  
+        self.v = v                                  
+        self.total_weight = 3701.66                 
+        self.cg_deviation = 117.87                  
+        self.g = 9.81                               
+        self.l = 1175                               
+        self.y = 117.87                             
+        self.m = m
+        self.num_posts =7                     
+
+
+    
+
+
+    def latangle(self,theta):
+        """
+        Calculates the angle between the Linear Actuator Technology (LAT) component
+        and the module plane based on the provided tilt angle theta.
+        Parameters:
+
+        - theta (float): The tilt angle of the module with respect to the horizontal
+                         plane, measured in degrees. This angle influences the relative
+                         positioning of the LAT in the system.
+
+        Returns:
+        - float: The calculated angle between the LAT and the module plane in degrees.
+        """
+
+        theta = np.deg2rad(theta)
+        b = self.h*np.sin(theta)
+        h1 = self.c*np.tan(theta)
+        diag1 = np.sqrt(self.c**2 + h1**2 )
+        b = (self.h-diag1 )*np.sin(theta)
+        a = self.v -  ((self.c *  np.tan(theta)) )-b
+        d = (self.h-diag1) * np.sin((np.pi/2- theta ))
+        g = np.sqrt(a**2 + d**2)
+        gamma = (self.h-diag1)/g *np.sin(np.pi/2 - theta)
+        gamma = np.degrees(math.asin(gamma))
+        beta = 180-gamma - (90-np.degrees(theta))
+        delta = 180-beta
+        return delta
+
+
+    def latlength(self,theta):
+        """
+        Calculates the effective length of the LAT from its pivot to the point of force application,
+        based on a given tilt angle theta.
+    
+        Parameters:
+        - theta (float): The tilt angle of the LAT system with respect to the horizontal,
+                            in degrees.
+    
+        Returns:
+        - float: The effective length (g) of the LAT in millimeters, calculated using
+                    the geometry of the LAT setup and the specified tilt angle.
+        """
+        theta = np.deg2rad(theta)
+        b = self.h*np.sin(theta)
+        h1 = self.c*np.tan(theta)
+        diag1 = np.sqrt(self.c**2 + h1**2 )
+        b = (self.h-diag1 )*np.sin(theta)
+        a = self.v -  ((self.c *  np.tan(theta)) )-b
+        d = (self.h-diag1) * np.sin((np.pi/2- theta ))
+        g = np.sqrt(a**2 + d**2)
+        return g
+
+    def latforce(self,theta,west=True,push=True):
+        """
+        Calculates the LAT force based on the tilt angle and direction.
+
+        Parameters:
+        - theta (float): Tilt angle in degrees affecting LAT force direction.
+        - west (bool, optional): Direction flag, True for west, False for east. Defaults to True.
+        - push (bool, optional): Action flag, True for pushing, False for pulling. Defaults to True.
+
+        Returns:
+        - float: Resultant LAT force in Newtons considering mass, gravity, tilt angle, and LAT setup.
+        """
+        theta_rad = np.deg2rad(theta)
+       
+        p = -1 if not push else 1
+        k = -1 if not west else 1
+        tg = self.m * self.g * ( self.l/1000 * np.cos(theta_rad) + self.y/1000 * np.sin(theta_rad))
+        teg = self.total_weight * self.g * self.cg_deviation/1000 * np.sin(theta_rad)
+        lever = np.sin(np.deg2rad(self.latangle(theta=theta))) * self.h
+        F = p*((k*tg + teg) /  lever)
+        return F
+    
+    def load_torque(self,theta,west=True,push=True):
+        """
+        Calculates the torque generated by the load based on the specified angle and direction.
+
+        Parameters:
+        - theta (float): The angle of inclination in degrees, affecting the torque direction.
+        - west (bool, optional): Specifies the direction of torque. True for west (default),
+          indicating the direction towards which the force is applied. False for east.
+        - push (bool, optional): Specifies the nature of force. True for pushing (default),
+          False for pulling. This affects the sign of the calculated torque.
+
+        Returns:
+        - float: The calculated load torque in Newton-meters (Nm), considering the mass of the
+          load, gravitational acceleration, and the specified angle and direction.
+        """
+        theta_rad = np.deg2rad(theta)
+        p = -1 if not push else 1
+        k = -1 if not west else 1
+        
+        torque = p * (self.m*self.g*(k*self.l/1000* np.cos(theta_rad)+ self.cg_deviation/1000* np.sin(theta_rad))) 
+        return torque
+    
+    def self_torque(self,theta):
+        """
+        Calculates the self-induced torque of the system based on the tilt angle.
+
+        Parameters:
+        - theta (float): The tilt angle in degrees, determining the orientation of the system.
+
+        Returns:
+        - float: The calculated self-induced torque in Newton-meters (Nm), derived from the
+          system's total weight, center of gravity deviation, and the specified tilt angle.
+        """
+        return self.total_weight * self.g * self.cg_deviation  * np.sin(np.deg2rad(theta)) /1000
+
+    def visualize_setup(self, theta,weight_east=None, weight_west=None):
+        # Convert theta from degrees to radians for calculation
+        theta_rad = np.deg2rad(theta)
+        
+        # Parameters for visualization
+        l = 1175  # Horizontal distance from pivot to the weight point
+        v = self.v  # Vertical length
+        h = self.h  # Distance from rotation axis to the actuator's position on the horizontal line
+        
+        # Calculate the end points of the vertical line
+        vertical_line_start = (0, 0)
+        vertical_line_end = (0, v)
+        
+        # Calculate the end points of the horizontal line
+        horizontal_line_left_end = (-l * np.cos(theta_rad), v + l * np.sin(theta_rad))
+        horizontal_line_right_end = (l * np.cos(theta_rad), v - l * np.sin(theta_rad))
+        
+        # Calculate actuator's position and angle
+        actuator_angle_deg = self.latangle(theta)  # The angle of the actuator from the horizontal plane
+
+        actuator_angle_rad = np.deg2rad(actuator_angle_deg)
+        
+        # Actuator's position on the horizontal line
+        actuator_horizontal_position = (-h * np.sin(actuator_angle_rad))
+        
+        
+
+        # Calculate the end point of the actuator line
+        actuator_end_x = 0
+        actuator_end_y = v + h * np.cos(actuator_angle_rad)  # Vertical position of the actuator's end
+        # Plot the actuator line
+        
+        # Plotting
+        fig, ax = plt.subplots()
+        ax.plot([actuator_end_x,actuator_horizontal_position ], [60, actuator_end_y], 'g-', label='Actuator Line')
+        # Plot the vertical line
+        ax.plot([vertical_line_start[0], vertical_line_end[0]], [vertical_line_start[1], vertical_line_end[1]], 'b-', label='Vertical Line',linewidth=2)
+        
+        # Plot the horizontal line
+        ax.plot([horizontal_line_left_end[0], horizontal_line_right_end[0]], [horizontal_line_left_end[1], horizontal_line_right_end[1]], 'k-', label='Horizontal Line',linewidth=3)
+        
+        
+        # Function to plot weights
+        def plot_weight(x, y, weight, side):
+            # Extend the vertical line length
+            ax.plot([x, x], [y, y - 300], 'b-')  # Extended line to 100 units down
+            
+            # Increase rectangle size for the weight box
+            rect_width = 200  # Increase width of the rectangle
+            rect_height = 200  # Increase height of the rectangle
+            rect_y_offset = 400  # Adjust offset for the larger rectangle
+            
+            rect = plt.Rectangle((x - rect_width / 2, y - rect_y_offset), rect_width, rect_height, fill=True, color='gray', label=f'Weight {side}')
+            ax.add_patch(rect)
+            
+            # Adjust text positioning based on the larger rectangle
+            ax.text(x, y - rect_y_offset + rect_height / 2, 'm', color='white', fontsize=16, ha='center', va='center')
+        
+        # Plot weights if specified
+        if weight_west:
+            plot_weight(horizontal_line_left_end[0], horizontal_line_left_end[1], weight_west, 'West')
+        if weight_east:
+            plot_weight(horizontal_line_right_end[0], horizontal_line_right_end[1], weight_east, 'East')
+        # Setting the plot limits and aspect
+        ax.set_xlim(-l * 1.5, l * 1.5)
+        ax.set_ylim(0, v + l)
+        ax.set_aspect('equal', 'box')
+        
+        # Add labels, title, and legend
+        ax.set_title(f'Setup Visualization at theta = {theta} degrees')
+        ax.set_xlabel('Horizontal Position (mm)')
+        ax.set_ylabel('Vertical Position (mm)')
+        ax.legend()
+        
+        # Show the plot
+        plt.show()
+
+    def perpendicular_distance(self,theta):
+        """
+        Calculates the perpendicular distance from the pivot to the point of force application
+        based on the tilt angle theta.
+
+        Parameters:
+        - theta (float): The tilt angle of the system with respect to the horizontal, in degrees.
+
+        Returns:
+        - float: The perpendicular distance in millimeters, calculated as the product of the
+          sine of the angle between the LAT and the module plane (latangle) and the vertical
+          distance from the pivot to the LAT holder top (self.h).
+
+        This method determines the effective lever arm length (perpendicular distance) for
+        the force applied by the LAT, varying with the tilt angle theta.
+        """
+        return np.sin(np.deg2rad(self.latangle(theta=theta))) * self.h
+       
+    
+    
+    
+    def get_torque_factor(self,force,push):
+        """
+        Determines the appropriate torque factor based on the normalized force and action type.
+
+        The force is normalized by dividing by the number of posts (self.num_posts) and then
+        compared against predefined thresholds to find the corresponding torque factor for
+        either pushing or pulling actions.
+
+        Parameters:
+        - force (float): The force applied, in Newtons.
+        - push (bool): True if the force is applied as a push, False for a pull. Defaults to True.
+
+        Returns:
+        - The torque factor (float) corresponding to the given force and action type.
+        """
+        normalized_force = force / self.num_posts
+        torque_factors = tf_push if push else tf_pull
+        for key in torque_factors:
+            if np.abs(normalized_force) < key:
+                return torque_factors[key]
+        
